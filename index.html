@@ -33,13 +33,26 @@
     <div id="view-waiting" class="hidden bg-slate-900 border border-slate-800 p-8 rounded-3xl text-center">
       <div class="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
       <h2 class="text-xl font-bold text-slate-200 mb-1">선생님 신호 대기 중</h2>
-      <p class="text-slate-500 text-xs">문제가 시작되면 30초 안에 답을 골라주세요!</p>
+      <p class="text-slate-500 text-xs">문제가 시작되면 칠판 화면에 집중해 주세요!</p>
     </div>
 
-    <!-- 3. 버튼 패드 화면 -->
+    <!-- 3. 1단계: 문제 지문 읽기 화면 -->
+    <div id="view-read" class="hidden bg-slate-900 border border-indigo-900/60 p-6 rounded-3xl text-center shadow-xl">
+      <div class="flex justify-between items-center mb-3">
+        <span id="read-badge-q" class="text-xs bg-indigo-950 border border-indigo-800 text-indigo-300 px-3 py-1 rounded-full font-bold">Q 1 읽는 중</span>
+        <span id="read-badge-pts" class="text-xs bg-amber-950 border border-amber-800 text-amber-400 px-2.5 py-1 rounded-full font-bold">+150점</span>
+      </div>
+      <div class="py-6">
+        <p class="text-4xl mb-3">📖</p>
+        <h3 class="text-lg font-bold text-slate-200 mb-2">칠판의 문제를 먼저 읽으세요!</h3>
+        <p class="text-slate-400 text-xs leading-relaxed">선생님이 정답 입력을 시작하면<br>선택 버튼이 즉시 나타납니다.</p>
+      </div>
+    </div>
+
+    <!-- 4. 2단계: 정답 선택 버튼 패드 -->
     <div id="view-pad" class="hidden bg-slate-900 border border-slate-800 p-5 rounded-3xl">
       <div class="flex justify-between items-center mb-4">
-        <span id="badge-q" class="text-xs bg-slate-800 border border-slate-700 text-indigo-300 px-3 py-1 rounded-full font-bold">문제 진행 중</span>
+        <span id="badge-q" class="text-xs bg-slate-800 border border-slate-700 text-indigo-300 px-3 py-1 rounded-full font-bold">정답 선택 중</span>
         <span id="badge-pts" class="text-xs bg-amber-950 border border-amber-800 text-amber-400 px-2.5 py-1 rounded-full font-bold">+150점</span>
       </div>
 
@@ -59,12 +72,12 @@
 
       <!-- 단답형 패드 -->
       <div id="pad-short" class="hidden space-y-3">
-        <input id="input-text" type="text" placeholder="정답 단어 입력 (30초)" class="w-full p-4 bg-slate-950 border border-slate-700 rounded-xl text-center text-lg focus:border-emerald-500 focus:outline-none">
+        <input id="input-text" type="text" placeholder="정답 단어 입력 (20초)" class="w-full p-4 bg-slate-950 border border-slate-700 rounded-xl text-center text-lg focus:border-emerald-500 focus:outline-none">
         <button onclick="submitText()" class="w-full py-3.5 bg-emerald-600 active:scale-95 font-bold rounded-xl text-lg transition">답안 제출</button>
       </div>
     </div>
 
-    <!-- 4. 결과 피드백 화면 -->
+    <!-- 5. 결과 화면 -->
     <div id="view-result" class="hidden bg-slate-900 border border-slate-800 p-8 rounded-3xl text-center">
       <h2 id="res-title" class="text-2xl font-black mb-2">답안 접수 완료!</h2>
       <p id="res-desc" class="text-slate-400 text-xs mb-4">선생님이 결과를 공개할 때까지 대기하세요.</p>
@@ -79,12 +92,22 @@
     let savedPin = '';
     let savedName = '';
 
+    function showOnlyView(viewId) {
+      const views = ['view-join', 'view-waiting', 'view-read', 'view-pad', 'view-result'];
+      views.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+          if (id === viewId) el.classList.remove('hidden');
+          else el.classList.add('hidden');
+        }
+      });
+    }
+
     function joinGame() {
       savedPin = document.getElementById('input-pin').value.trim();
       savedName = document.getElementById('input-name').value.trim();
       if (!savedPin || !savedName) return alert('PIN 번호와 이름을 모두 입력해 주세요.');
 
-      // 튕김 방지를 위한 Peer 인스턴스 생성 및 STUN 서버 연결
       peer = new Peer({
         config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
       });
@@ -93,31 +116,33 @@
         conn = peer.connect(`history-quiz-${savedPin}`, { reliable: true });
         conn.on('open', () => {
           conn.send({ type: 'JOIN', name: savedName });
-          document.getElementById('view-join').classList.add('hidden');
-          document.getElementById('view-waiting').classList.remove('hidden');
+          showOnlyView('view-waiting');
         });
 
         conn.on('data', (d) => {
-          if (d.type === 'QUESTION') {
-            document.getElementById('view-waiting').classList.add('hidden');
-            document.getElementById('view-result').classList.add('hidden');
-            document.getElementById('view-pad').classList.remove('hidden');
+          if (d.type === 'READ_PHASE') {
+            showOnlyView('view-read');
+            document.getElementById('read-badge-q').innerText = `Q ${d.qIndex + 1} 읽는 중`;
+            document.getElementById('read-badge-pts').innerText = `+${d.points}점`;
+          } else if (d.type === 'INPUT_PHASE' || d.type === 'QUESTION') {
+            showOnlyView('view-pad');
+            document.getElementById('badge-q').innerText = `Q ${d.qIndex + 1} 정답 선택 중`;
+            document.getElementById('badge-pts').innerText = `+${d.points || 150}점`;
 
-            document.getElementById('badge-q').innerText = `Q ${d.qIndex + 1} 진행 중`;
-            document.getElementById('badge-pts').innerText = `+${d.points}점`;
             document.getElementById('pad-choice').classList.add('hidden');
             document.getElementById('pad-ox').classList.add('hidden');
             document.getElementById('pad-short').classList.add('hidden');
 
-            if (d.qType === 'choice') document.getElementById('pad-choice').classList.remove('hidden');
-            else if (d.qType === 'ox') document.getElementById('pad-ox').classList.remove('hidden');
-            else {
+            if (d.qType === 'choice') {
+              document.getElementById('pad-choice').classList.remove('hidden');
+            } else if (d.qType === 'ox') {
+              document.getElementById('pad-ox').classList.remove('hidden');
+            } else {
               document.getElementById('input-text').value = '';
               document.getElementById('pad-short').classList.remove('hidden');
             }
           } else if (d.type === 'RESULT') {
-            document.getElementById('view-pad').classList.add('hidden');
-            document.getElementById('view-result').classList.remove('hidden');
+            showOnlyView('view-result');
             document.getElementById('res-title').innerText = d.isCorrect ? `🎉 정답! (+${d.earned}점)` : '💧 아쉽게 틀렸습니다';
             document.getElementById('res-title').className = d.isCorrect ? 'text-2xl font-black mb-2 text-emerald-400' : 'text-2xl font-black mb-2 text-rose-400';
             document.getElementById('my-score').innerText = d.score;
@@ -131,8 +156,7 @@
     function submit(val) {
       if (conn && conn.open) {
         conn.send({ type: 'SUBMIT', ans: val });
-        document.getElementById('view-pad').classList.add('hidden');
-        document.getElementById('view-result').classList.remove('hidden');
+        showOnlyView('view-result');
         document.getElementById('res-title').innerText = '답안 접수 완료!';
         document.getElementById('res-title').className = 'text-2xl font-black mb-2 text-indigo-400';
       }
